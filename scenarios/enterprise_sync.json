@@ -1,0 +1,14 @@
+{
+  "name": "Enterprise sync pool (indemnified)",
+  "description": "Enterprise/sync-scoped licensing: buyers pay a premium for cleared, indemnified music (ads, gaming, film/TV), and a larger share of that premium flows to rights holders - platform retains 45%. This is the deal shape where 'licensed' converts to revenue, and the wedge that could bring a major in on contained, non-consumer terms. All names and numbers synthetic.",
+  "platform_share": "0.45",
+  "recorded_share": "0.5",
+  "publishing_share": "0.5",
+  "rightsholders": [
+    { "name": "Major Label (contained scope)", "side": "recorded", "weight": "6" },
+    { "name": "Indie Label A", "side": "recorded", "weight": "3" },
+    { "name": "Indie Label B", "side": "recorded", "weight": "1" },
+    { "name": "Major Publisher (contained scope)", "side": "publishing", "weight": "5" },
+    { "name": "Publisher X", "side": "publishing", "weight": "5" }
+  ]
+}
