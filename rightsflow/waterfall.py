@@ -1,18 +1,17 @@
 """Royalty waterfall for AI-music licensing pools.
 
-Models the flow of money in an opt-in, usage-proportional AI music license
-(the architecture ElevenLabs pioneered with Merlin and Kobalt in Aug 2025):
+Models a configurable flow of money in a hypothetical opt-in AI-music license:
 
     gross revenue
       -> platform retained share
       -> rights-holder royalty pool
-          -> recorded-music pool / publishing pool  (e.g. the 50/50 parity
-             precedent set by the Kobalt deal and later the NMPA framework)
-              -> per-rights-holder allocation, proportional to opt-in
-                 catalog inclusion and usage weights
+          -> recorded-music pool / publishing pool
+              -> per-rights-holder allocation, proportional to declared
+                 catalog-inclusion and usage weights
 
 Money is handled in Decimal cents with largest-remainder rounding so every
-waterfall ties out exactly: the sum of payouts equals the pool to the cent.
+waterfall ties out exactly: payouts plus explicitly undistributed amounts equal
+the pool to the cent.
 An allocation that doesn't tie out is a bug, not a rounding artifact —
 tests enforce this invariant.
 """
@@ -20,14 +19,20 @@ tests enforce this invariant.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_UP
 from typing import Iterable
 
 CENT = Decimal("0.01")
 
 
 def to_money(x) -> Decimal:
-    return Decimal(str(x)).quantize(CENT, rounding=ROUND_HALF_UP)
+    try:
+        value = Decimal(str(x))
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError(f"invalid money value: {x!r}") from exc
+    if not value.is_finite():
+        raise ValueError("money values must be finite")
+    return value.quantize(CENT, rounding=ROUND_HALF_UP)
 
 
 @dataclass(frozen=True)
@@ -43,11 +48,17 @@ class RightsHolder:
     name: str
     side: str  # "recorded" | "publishing"
     weight: Decimal
+    id: str = ""
 
     def __post_init__(self):
+        if not self.name.strip():
+            raise ValueError("rights-holder name must not be empty")
+        if not self.id:
+            object.__setattr__(self, "id", self.name)
         if self.side not in ("recorded", "publishing"):
             raise ValueError(f"side must be 'recorded' or 'publishing', got {self.side!r}")
-        if Decimal(str(self.weight)) < 0:
+        weight = Decimal(str(self.weight))
+        if not weight.is_finite() or weight < 0:
             raise ValueError(f"negative weight for {self.name}")
 
 
@@ -66,11 +77,16 @@ class Scenario:
             raise ValueError("platform_share must be in [0, 1)")
         rs = Decimal(str(self.recorded_share))
         pb = Decimal(str(self.publishing_share))
+        if not rs.is_finite() or not pb.is_finite() or not (0 <= rs <= 1) or not (0 <= pb <= 1):
+            raise ValueError("recorded_share and publishing_share must each be in [0, 1]")
         if rs + pb != 1:
             raise ValueError(f"recorded_share + publishing_share must equal 1, got {rs + pb}")
         for side in ("recorded", "publishing"):
             if self.side_holders(side) and sum(h.weight for h in self.side_holders(side)) == 0:
                 raise ValueError(f"{side} side has holders but zero total weight")
+        ids = [holder.id for holder in self.rightsholders]
+        if len(ids) != len(set(ids)):
+            raise ValueError("rights-holder ids must be unique")
 
     def side_holders(self, side: str) -> tuple[RightsHolder, ...]:
         return tuple(h for h in self.rightsholders if h.side == side)
@@ -91,24 +107,39 @@ class WaterfallResult:
     recorded_pool: Decimal
     publishing_pool: Decimal
     allocations: list[Allocation] = field(default_factory=list)
+    undistributed_recorded: Decimal = Decimal("0.00")
+    undistributed_publishing: Decimal = Decimal("0.00")
 
-    def payout(self, name: str) -> Decimal:
-        for a in self.allocations:
-            if a.holder.name == name:
-                return a.amount
-        raise KeyError(name)
+    @property
+    def total_paid(self) -> Decimal:
+        return sum((a.amount for a in self.allocations), Decimal("0.00"))
+
+    @property
+    def undistributed(self) -> Decimal:
+        return self.undistributed_recorded + self.undistributed_publishing
+
+    def payout(self, key: str) -> Decimal:
+        by_id = [a for a in self.allocations if a.holder.id == key]
+        if len(by_id) == 1:
+            return by_id[0].amount
+        by_name = [a for a in self.allocations if a.holder.name == key]
+        if len(by_name) == 1:
+            return by_name[0].amount
+        if len(by_name) > 1:
+            raise KeyError(f"ambiguous rights-holder name {key!r}; use a unique id")
+        raise KeyError(key)
 
     def assert_conservation(self):
         """Every level of the waterfall must tie out to the cent."""
-        assert self.platform_retained + self.royalty_pool == self.gross_revenue, "level 1 leak"
-        assert self.recorded_pool + self.publishing_pool == self.royalty_pool, "level 2 leak"
-        paid = sum((a.amount for a in self.allocations), Decimal("0"))
-        distributable = sum(
-            pool
-            for pool, side in ((self.recorded_pool, "recorded"), (self.publishing_pool, "publishing"))
-            if self.scenario.side_holders(side)
-        )
-        assert paid == distributable, f"allocation leak: paid {paid} vs pool {distributable}"
+        if self.platform_retained + self.royalty_pool != self.gross_revenue:
+            raise RuntimeError("level 1 conservation failure")
+        if self.recorded_pool + self.publishing_pool != self.royalty_pool:
+            raise RuntimeError("level 2 conservation failure")
+        if self.total_paid + self.undistributed != self.royalty_pool:
+            raise RuntimeError(
+                f"allocation failure: paid {self.total_paid} + undistributed "
+                f"{self.undistributed} vs pool {self.royalty_pool}"
+            )
 
 
 def _largest_remainder(pool_cents: int, weights: list[Decimal]) -> list[int]:
@@ -131,6 +162,8 @@ def _largest_remainder(pool_cents: int, weights: list[Decimal]) -> list[int]:
 
 def run_waterfall(scenario: Scenario, gross_revenue) -> WaterfallResult:
     gross = to_money(gross_revenue)
+    if gross < 0:
+        raise ValueError("gross_revenue must be non-negative")
     gross_cents = int(gross / CENT)
 
     pool_cents = int(
@@ -157,6 +190,11 @@ def run_waterfall(scenario: Scenario, gross_revenue) -> WaterfallResult:
     for side, side_cents in (("recorded", recorded_cents), ("publishing", publishing_cents)):
         holders = scenario.side_holders(side)
         if not holders:
+            amount = Decimal(side_cents) * CENT
+            if side == "recorded":
+                result.undistributed_recorded = amount
+            else:
+                result.undistributed_publishing = amount
             continue
         shares = _largest_remainder(side_cents, [Decimal(str(h.weight)) for h in holders])
         for h, c in zip(holders, shares):

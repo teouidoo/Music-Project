@@ -29,9 +29,17 @@ def render_waterfall(result: WaterfallResult) -> str:
         lines.append(
             f"  {a.holder.name:<28}{a.holder.side:<12}{Decimal(str(a.holder.weight)):>8}{money(a.amount):>16}"
         )
-    paid = sum((a.amount for a in result.allocations), Decimal("0"))
+    paid = result.total_paid
     lines.append(f"  {'':<48}{'-' * 16:>16}")
-    lines.append(f"  {'TOTAL PAID (ties to pool)':<48}{money(paid):>16}")
+    lines.append(f"  {'TOTAL PAID':<48}{money(paid):>16}")
+    if result.undistributed_recorded:
+        lines.append(f"  {'UNDISTRIBUTED (no recorded holders)':<48}{money(result.undistributed_recorded):>16}")
+    if result.undistributed_publishing:
+        lines.append(f"  {'UNDISTRIBUTED (no publishing holders)':<48}{money(result.undistributed_publishing):>16}")
+    if result.undistributed:
+        lines.append(f"  {'TOTAL PAID + UNDISTRIBUTED = POOL':<48}{money(paid + result.undistributed):>16}")
+    else:
+        lines.append(f"  {'TOTAL PAID (ties to pool)':<48}{money(paid):>16}")
     return "\n".join(lines)
 
 
@@ -45,7 +53,10 @@ def render_decision(inputs: DecisionInputs, result: DecisionResult) -> str:
     lines.append("")
     lines.append(f"  + Royalty stream NPV                     {money(result.royalties_npv):>16}")
     lines.append(f"  + Substitution loss avoided NPV          {money(result.substitution_loss_avoided_npv):>16}")
-    lines.append(f"    (staying out concedes AI-shifted spend at {inputs.terminal_substitution:.0%} terminal)")
+    lines.append(
+        f"    ({inputs.substitution_avoidance_fraction:.0%} of modeled abstention loss avoided; "
+        f"{inputs.terminal_substitution:.0%} terminal exposure)"
+    )
     lines.append(f"  - Cannibalization cost NPV               {money(result.cannibalization_cost_npv):>16}")
     lines.append(f"    (licensed outputs displacing own income at {inputs.cannibalization_rate:.0%} terminal)")
     lines.append(f"  {'':<41}{'-' * 16:>16}")
@@ -53,12 +64,15 @@ def render_decision(inputs: DecisionInputs, result: DecisionResult) -> str:
     lines.append("")
     be = breakeven_cannibalization(inputs)
     lines.append(f"  VERDICT: {result.verdict}")
-    lines.append(
-        f"  Breakeven cannibalization: {be:.1%} terminal - licensing pays unless AI outputs "
-        f"displace more than {be:.1%} of this holder's addressable income by year {inputs.years}."
-        if be != float("inf")
-        else "  Breakeven cannibalization: n/a (no addressable income at risk)"
-    )
+    if be == float("inf"):
+        lines.append("  Breakeven cannibalization: n/a (no addressable income at risk)")
+    elif be > 1:
+        lines.append("  Breakeven cannibalization: none within the feasible 0%-100% range.")
+    else:
+        lines.append(
+            f"  Breakeven cannibalization: {be:.1%} terminal - licensing pays unless AI outputs "
+            f"displace more than {be:.1%} of this holder's addressable income by year {inputs.years}."
+        )
     return "\n".join(lines)
 
 

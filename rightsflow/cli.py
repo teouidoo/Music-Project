@@ -15,7 +15,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from .decision import DecisionInputs, evaluate, sensitivity_grid
-from .generate import generate_track, save_manifest
+from .generate import MissingCredentialsError, generate_track, save_manifest
 from .report import render_decision, render_sensitivity, render_waterfall
 from .waterfall import RightsHolder, Scenario, run_waterfall
 
@@ -30,7 +30,7 @@ def load_scenario(path: str) -> Scenario:
         recorded_share=Decimal(str(raw["recorded_share"])),
         publishing_share=Decimal(str(raw["publishing_share"])),
         rightsholders=tuple(
-            RightsHolder(name=h["name"], side=h["side"], weight=Decimal(str(h["weight"])))
+            RightsHolder(name=h["name"], side=h["side"], weight=Decimal(str(h["weight"])), id=h.get("id", ""))
             for h in raw["rightsholders"]
         ),
     )
@@ -47,6 +47,7 @@ def _decision_inputs(args, scenario: Scenario) -> DecisionInputs:
         addressable_income=Decimal(str(args.addressable_income)),
         terminal_substitution=args.substitution,
         cannibalization_rate=args.cannibalization,
+        substitution_avoidance_fraction=args.avoidance,
     )
 
 
@@ -85,8 +86,12 @@ def cmd_demo(args):
         "female k-pop vocal over bright future-bass, bilingual hook",
         "cinematic strings building to a hopeful resolution, sync-ready",
     ]
-    tracks = [generate_track(p, mock=args.mock, index=i + 1) for i, p in enumerate(prompts)]
-    manifest = save_manifest(tracks, str(root / "examples" / "generated" / "manifest.json"))
+    tracks = []
+    manifest_path = str(root / "examples" / "generated" / "manifest.json")
+    for i, prompt in enumerate(prompts):
+        tracks.append(generate_track(prompt, mock=args.mock, index=i + 1))
+        save_manifest(tracks, manifest_path)  # journal each successful paid generation
+    manifest = manifest_path
     print(f"1) GENERATED {len(tracks)} tracks ({'mock' if tracks[0].mock else 'Eleven Music API'}) -> {manifest}")
     for t in tracks:
         print(f"   - [{t.track_id}] {t.prompt}")
@@ -105,6 +110,7 @@ def cmd_demo(args):
         addressable_income=Decimal("2000000"),
         substitution=0.10,
         cannibalization=0.03,
+        avoidance=0.5,
     )
     inputs = _decision_inputs(args2, scenario)
     print("3) " + render_decision(inputs, evaluate(inputs)))
@@ -121,37 +127,39 @@ def main(argv=None):
 
     sp = sub.add_parser("simulate", help="run a royalty waterfall for a scenario")
     sp.add_argument("--scenario", required=True)
-    sp.add_argument("--revenue", required=True, type=float)
+    sp.add_argument("--revenue", required=True, type=Decimal)
     sp.set_defaults(func=cmd_simulate)
 
     dp = sub.add_parser("decide", help="license-vs-abstain lens for one rights holder")
     dp.add_argument("--scenario", required=True)
-    dp.add_argument("--revenue", required=True, type=float)
+    dp.add_argument("--revenue", required=True, type=Decimal)
     dp.add_argument("--holder", required=True)
     dp.add_argument("--growth", type=float, default=0.5)
     dp.add_argument("--discount", type=float, default=0.12)
     dp.add_argument("--years", type=int, default=5)
-    dp.add_argument("--addressable-income", type=float, default=2_000_000)
+    dp.add_argument("--addressable-income", type=Decimal, default=Decimal("2000000"))
     dp.add_argument("--substitution", type=float, default=0.10)
     dp.add_argument("--cannibalization", type=float, default=0.03)
+    dp.add_argument("--avoidance", type=float, default=0.5,
+                    help="fraction of abstention substitution loss avoided by licensing")
     dp.add_argument("--sensitivity", action="store_true")
     dp.set_defaults(func=cmd_decide)
 
     gp = sub.add_parser("generate", help="generate a track via the Eleven Music API (or mock)")
     gp.add_argument("--prompt", required=True)
     gp.add_argument("--length-ms", type=int, default=30_000)
-    gp.add_argument("--mock", action="store_true")
+    gp.add_argument("--mock", action="store_true", help="explicitly use offline mock generation")
     gp.set_defaults(func=cmd_generate)
 
     dm = sub.add_parser("demo", help="end-to-end demo: generate -> waterfall -> decision")
-    dm.add_argument("--mock", action="store_true", default=None)
+    dm.add_argument("--mock", action="store_true", help="explicitly use offline mock generation")
     dm.set_defaults(func=cmd_demo)
 
     args = p.parse_args(argv)
-    if getattr(args, "command", None) == "demo" and args.mock is None:
-        import os
-        args.mock = not bool(os.environ.get("ELEVENLABS_API_KEY"))
-    args.func(args)
+    try:
+        args.func(args)
+    except MissingCredentialsError as exc:
+        p.error(str(exc))
 
 
 if __name__ == "__main__":

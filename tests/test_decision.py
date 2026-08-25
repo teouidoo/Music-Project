@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+import pytest
+
 from rightsflow.decision import (
     DecisionInputs,
     breakeven_cannibalization,
@@ -78,3 +80,30 @@ def test_sensitivity_grid_shape_and_monotonicity():
     assert len(grid) == 2 and all(len(row) == 3 for row in grid)
     assert grid[1][0] > grid[0][0]          # more growth -> more royalties
     assert grid[0][2] > grid[0][0]          # more substitution risk -> licensing worth more
+
+
+@pytest.mark.parametrize(
+    "override, message",
+    [
+        ({"years": 0}, "years"),
+        ({"discount_rate": -1}, "discount_rate"),
+        ({"discount_rate": float("inf")}, "discount_rate"),
+        ({"discount_rate": float("nan")}, "discount_rate"),
+        ({"pool_growth": -1}, "pool_growth"),
+        ({"pool_growth": float("inf")}, "pool_growth"),
+        ({"terminal_substitution": 1.1}, "terminal_substitution"),
+        ({"cannibalization_rate": -0.1}, "cannibalization_rate"),
+        ({"substitution_avoidance_fraction": 1.1}, "substitution_avoidance_fraction"),
+        ({"pool_gross_revenue": Decimal("-1")}, "pool_gross_revenue"),
+        ({"addressable_income": Decimal("-1")}, "addressable_income"),
+    ],
+)
+def test_invalid_decision_inputs_are_rejected(override, message):
+    with pytest.raises(ValueError, match=message):
+        inputs(**override)
+
+
+def test_partial_substitution_avoidance_is_explicit():
+    full = evaluate(inputs(substitution_avoidance_fraction=1.0))
+    partial = evaluate(inputs(substitution_avoidance_fraction=0.5))
+    assert partial.substitution_loss_avoided_npv < full.substitution_loss_avoided_npv

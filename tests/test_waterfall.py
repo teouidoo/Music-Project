@@ -62,6 +62,27 @@ def test_empty_side_keeps_pool_undistributed_but_tied():
     r = run_waterfall(s, Decimal("1000"))
     r.assert_conservation()
     assert r.payout("A") == r.recorded_pool
+    assert r.total_paid + r.undistributed == r.royalty_pool
+    assert r.undistributed_publishing == r.publishing_pool
+
+
+def test_negative_revenue_is_rejected():
+    with pytest.raises(ValueError, match="non-negative"):
+        run_waterfall(scenario(), Decimal("-1"))
+
+
+def test_each_pool_share_must_be_in_range():
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        scenario(rec="-1", pub="2")
+
+
+def test_duplicate_ids_are_rejected():
+    holders = [
+        RightsHolder("A", "recorded", Decimal("1"), id="same"),
+        RightsHolder("B", "publishing", Decimal("1"), id="same"),
+    ]
+    with pytest.raises(ValueError, match="ids must be unique"):
+        scenario(holders=holders)
 
 
 def test_split_must_sum_to_one():

@@ -1,6 +1,6 @@
 {
   "name": "Baseline opt-in indie pool",
-  "description": "Opt-in usage-proportional pool in the shape of the Aug-2025 Merlin/Kobalt architecture: platform retains 55%, royalty pool split 50/50 recorded/publishing (the Kobalt parity precedent, later the NMPA industry norm). Weights = training-inclusion x output-popularity, normalized per side. All names and numbers synthetic.",
+  "description": "Illustrative opt-in pool: platform retains 55%, the royalty pool is split 50/50 between recorded music and publishing, and synthetic weights are normalized within each side. These are configurable modeling assumptions, not reported terms of ElevenLabs or any partner. All names and numbers are synthetic.",
   "platform_share": "0.55",
   "recorded_share": "0.5",
   "publishing_share": "0.5",

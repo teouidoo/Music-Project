@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from math import isfinite
 
 from .waterfall import Scenario, run_waterfall, to_money
 
@@ -36,6 +37,29 @@ class DecisionInputs:
     addressable_income: Decimal      # holder's annual traditional income exposed to AI substitution (sync, production, library)
     terminal_substitution: float     # fraction of addressable income lost by year N if NOT licensed (linear ramp)
     cannibalization_rate: float      # fraction of addressable income lost by year N BECAUSE licensed (linear ramp)
+    substitution_avoidance_fraction: float = 1.0  # share of abstention loss actually avoided by licensing
+
+    def __post_init__(self):
+        revenue = Decimal(str(self.pool_gross_revenue))
+        income = Decimal(str(self.addressable_income))
+        if not revenue.is_finite() or revenue < 0:
+            raise ValueError("pool_gross_revenue must be finite and non-negative")
+        if not income.is_finite() or income < 0:
+            raise ValueError("addressable_income must be finite and non-negative")
+        if self.years < 1:
+            raise ValueError("years must be at least 1")
+        if not isfinite(self.discount_rate) or self.discount_rate <= -1:
+            raise ValueError("discount_rate must be greater than -1")
+        if not isfinite(self.pool_growth) or self.pool_growth <= -1:
+            raise ValueError("pool_growth must be greater than -1")
+        for name, value in (
+            ("terminal_substitution", self.terminal_substitution),
+            ("cannibalization_rate", self.cannibalization_rate),
+            ("substitution_avoidance_fraction", self.substitution_avoidance_fraction),
+        ):
+            if not isfinite(value) or not 0 <= value <= 1:
+                raise ValueError(f"{name} must be in [0, 1]")
+        self.scenario.side_holders("recorded")  # force scenario validation before holder lookup
 
 
 def npv(cashflows, r: float) -> Decimal:
@@ -81,7 +105,12 @@ def evaluate(inputs: DecisionInputs) -> DecisionResult:
     return DecisionResult(
         royalties_npv=npv(royalty_stream(inputs), r),
         substitution_loss_avoided_npv=npv(
-            _linear_ramp_losses(inputs.addressable_income, inputs.terminal_substitution, inputs.years), r
+            _linear_ramp_losses(
+                inputs.addressable_income,
+                inputs.terminal_substitution * inputs.substitution_avoidance_fraction,
+                inputs.years,
+            ),
+            r,
         ),
         cannibalization_cost_npv=npv(
             _linear_ramp_losses(inputs.addressable_income, inputs.cannibalization_rate, inputs.years), r
@@ -116,6 +145,7 @@ def sensitivity_grid(inputs: DecisionInputs, growth_axis, substitution_axis):
                 addressable_income=inputs.addressable_income,
                 terminal_substitution=s,
                 cannibalization_rate=inputs.cannibalization_rate,
+                substitution_avoidance_fraction=inputs.substitution_avoidance_fraction,
             )
             row.append(evaluate(probe).license_advantage_npv)
         grid.append(row)

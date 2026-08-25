@@ -1,19 +1,22 @@
-# Demo output (real run, 2026-08-10)
+# Demo output
 
-Tracks below were generated live via the Eleven Music API (audio files are
-gitignored; regenerate with `python -m rightsflow.cli demo`).
+## 1. Generated tracks (real run, 2026-08-10)
 
-## 1. Generated tracks
+Tracks below were generated live via the Eleven Music API (audio files are gitignored;
+regenerate with `python -m rightsflow.cli demo`, or `--mock` for an explicit offline run).
 ```
 [eleven-1786389510-001] (30000ms, mock=False)  warm analog synthwave, 100 bpm, nostalgic but forward-looking
 [eleven-1786389521-002] (30000ms, mock=False)  female k-pop vocal over bright future-bass, bilingual hook
 [eleven-1786389532-003] (30000ms, mock=False)  cinematic strings building to a hopeful resolution, sync-ready
 ```
 
+Sections 2-4 below are regenerated from rightsflow 0.2.0 (`python -m rightsflow.cli demo --mock`).
+The economics do not depend on the generated audio; the decision lens now applies an explicit
+`--avoidance` assumption (default 50%) rather than assuming licensing prevents all substitution loss.
+
 ## 2. Waterfall ($1M gross, baseline scenario)
 ```
-SCENARIO: Baseline opt-in indie pool
-  Opt-in usage-proportional pool in the shape of the Aug-2025 Merlin/Kobalt architecture: platform retains 55%, royalty pool split 50/50 recorded/publishing (the Kobalt parity precedent, later the NMPA industry norm). Weights = training-inclusion x output-popularity, normalized per side. All names and numbers synthetic.
+  Illustrative opt-in pool: platform retains 55%, the royalty pool is split 50/50 between recorded music and publishing, and synthetic weights are normalized within each side. These are configurable modeling assumptions, not reported terms of ElevenLabs or any partner. All names and numbers are synthetic.
 
   Gross revenue                   $1,000,000.00
   Platform retained (55%)          $550,000.00
@@ -28,29 +31,33 @@ SCENARIO: Baseline opt-in indie pool
   Publisher X                 publishing         6     $135,000.00
   Publisher Y                 publishing         4      $90,000.00
                                                   ----------------
+  TOTAL PAID                                           $450,000.00
   TOTAL PAID (ties to pool)                            $450,000.00
 ```
 
-## 3. Decision lens + sensitivity
+## 3. Decision lens
 ```
 DECISION LENS: Indie Label A
   (5yr horizon, 12% discount, pool growth 50%, addressable income $2,000,000.00/yr)
 
   + Royalty stream NPV                          $979,607.87
-  + Substitution loss avoided NPV               $400,071.69
-    (staying out concedes AI-shifted spend at 10% terminal)
+  + Substitution loss avoided NPV               $200,035.84
+    (50% of modeled abstention loss avoided; 10% terminal exposure)
   - Cannibalization cost NPV                    $120,021.51
     (licensed outputs displacing own income at 3% terminal)
                                            ----------------
-  = License advantage NPV                     $1,259,658.05
+  = License advantage NPV                     $1,059,622.20
 
   VERDICT: LICENSE
-  Breakeven cannibalization: 34.5% terminal - licensing pays unless AI outputs displace more than 34.5% of this holder's addressable income by year 5.
+  Breakeven cannibalization: 29.5% terminal - licensing pays unless AI outputs displace more than 29.5% of this holder's addressable income by year 5.
+```
 
+## 4. Sensitivity
+```
 SENSITIVITY: license advantage NPV  (rows: pool growth / cols: terminal substitution)
                       0%            5%           10%           20%
-        0%   $285,515.81   $485,551.65   $685,587.50 $1,085,659.19
-       25%   $513,136.57   $713,172.41   $913,208.26 $1,313,279.95
-       50%   $859,586.36 $1,059,622.20 $1,259,658.05 $1,659,729.74
-      100% $2,073,429.26 $2,273,465.10 $2,473,500.95 $2,873,572.64
+        0%   $285,515.81   $385,533.73   $485,551.65   $685,587.50
+       25%   $513,136.57   $613,154.49   $713,172.41   $913,208.26
+       50%   $859,586.36   $959,604.28 $1,059,622.20 $1,259,658.05
+      100% $2,073,429.26 $2,173,447.18 $2,273,465.10 $2,473,500.95
 ```

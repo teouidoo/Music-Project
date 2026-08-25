@@ -1,15 +1,15 @@
 [project]
 name = "rightsflow"
-version = "0.1.0"
+version = "0.2.0"
 description = "Rights-holder economics for AI-generated music, built on the Eleven Music API"
-authors = [{ name = "Thomas Kim", email = "tkim1993@gmail.com" }]
+authors = [{ name = "Thomas Kim", email = "thomas.wj.kim@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = []
 
 [project.optional-dependencies]
-eleven = ["elevenlabs"]
+eleven = ["elevenlabs>=2.62,<3"]
 dev = ["pytest"]
 
 [project.scripts]
